@@ -1,0 +1,23 @@
+fastapi==0.115.12
+uvicorn[standard]==0.34.2
+python-dotenv==1.1.0
+pydantic==2.11.2
+pydantic-settings==2.9.1
+langchain==0.3.25
+langchain-core==0.3.63
+langchain-community==0.3.24
+langchain-huggingface==0.2.0
+langchain-ollama==0.3.3
+langchain-groq==0.3.2
+chromadb>=1.0.0
+pypdf==5.5.0
+
+# OCR support for image-based PDFs:
+#   - PyMuPDF renders PDF pages to PNG images (no external binaries needed)
+#   - python-doctr runs a local two-stage OCR pipeline on those images
+#     using pre-trained PyTorch models (auto-downloaded ~130 MB on first use)
+#   No Poppler, no Tesseract, no Ollama required for OCR.
+PyMuPDF>=1.24.0
+python-doctr>=1.0.0
+python-multipart==0.0.20
+sentence-transformers==4.1.0
