@@ -19,7 +19,7 @@ from collections.abc import AsyncGenerator
 from typing import Union
 
 from langchain_core.output_parsers import StrOutputParser
-from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_ollama import ChatOllama
 from langchain_groq import ChatGroq
 
@@ -111,6 +111,7 @@ class AILogicService:
         prompt = ChatPromptTemplate.from_messages(
             [
                 ("system", SYSTEM_PROMPT),
+                MessagesPlaceholder(variable_name="chat_history", optional=True),
                 ("human", USER_PROMPT),
             ]
         )
@@ -156,6 +157,7 @@ class AILogicService:
         self,
         question: str,
         category: str | None = None,
+        chat_history: list = None,
     ) -> ChatResponse:
         """
         Process a question through the full RAG pipeline.
@@ -204,6 +206,7 @@ class AILogicService:
             {
                 "context": context,
                 "question": question,
+                "chat_history": chat_history or [],
             }
         )
         answer = self._sanitize_answer_text(raw_answer)
@@ -244,6 +247,7 @@ class AILogicService:
         self,
         question: str,
         category: str | None = None,
+        chat_history: list = None,
     ) -> AsyncGenerator[str, None]:
         """
         Stream the RAG answer token by token.
@@ -289,6 +293,7 @@ class AILogicService:
             {
                 "context": context,
                 "question": question,
+                "chat_history": chat_history or [],
             }
         ):
             yield self._sanitize_answer_text(chunk)

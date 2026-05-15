@@ -5,6 +5,7 @@ Defines the data contracts for all API endpoints.
 
 from datetime import datetime
 from enum import Enum
+import uuid
 
 from pydantic import BaseModel, Field
 
@@ -44,6 +45,10 @@ class ChatRequest(BaseModel):
         default=None,
         description="Filter pencarian berdasarkan kategori dokumen (opsional)",
     )
+    session_id: str | None = Field(
+        default=None,
+        description="ID Sesi chat (opsional, jika kosong akan membuat sesi baru)",
+    )
 
 
 class SourceDocument(BaseModel):
@@ -76,6 +81,24 @@ class ChatResponse(BaseModel):
         description="Waktu pemrosesan dalam detik",
     )
 
+
+class ChatSessionResponse(BaseModel):
+    id: uuid.UUID
+    title: str
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class ChatMessageDetail(BaseModel):
+    id: uuid.UUID
+    sender_role: str
+    content: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
 
 # ── Ingest Schemas ────────────────────────────────────────────────
 

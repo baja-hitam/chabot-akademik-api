@@ -51,6 +51,14 @@ class Settings(BaseSettings):
     # document snippets to the LLM. This helps reduce input token usage.
     EXCERPT_CHARS: int = 500
 
+    # ── Database Configuration ────────────────────────────────────
+    POSTGRES_URL: str = os.getenv("POSTGRES_URL", "postgresql://postgres:postgres@localhost:5432/chatbot_akademik")
+    
+    # ── Security & JWT ────────────────────────────────────────────
+    JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "super-secret-key-change-in-production")
+    JWT_ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7
+
     # ── Application ───────────────────────────────────────────────
     APP_HOST: str = "0.0.0.0"
     APP_PORT: int = 8000

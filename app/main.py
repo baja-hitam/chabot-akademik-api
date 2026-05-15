@@ -16,8 +16,13 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.v1 import chat, health, ingest
+from app.api.v1 import chat, health, ingest, auth, announcements
 from app.core.config import get_settings
+from app.infrastructure.database import engine
+from app.domain.models import base  # this ensures models are registered
+
+# Create database tables
+base.Base.metadata.create_all(bind=engine)
 
 # ── Logging Configuration ─────────────────────────────────────────
 
@@ -94,6 +99,9 @@ app.add_middleware(
 app.include_router(health.router, prefix="/api/v1")
 app.include_router(ingest.router, prefix="/api/v1")
 app.include_router(chat.router, prefix="/api/v1")
+app.include_router(auth.router, prefix="/api/v1/auth")
+app.include_router(announcements.router, prefix="/api/v1/announcements")
+
 
 
 # ── Root Endpoint ─────────────────────────────────────────────────
