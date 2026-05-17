@@ -13,8 +13,10 @@ import sys
 from contextlib import asynccontextmanager
 
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from fastapi.requests import Request
 
 from app.api.v1 import chat, health, ingest, auth, announcements
 from app.core.config import get_settings
@@ -81,6 +83,16 @@ app = FastAPI(
     redoc_url="/redoc",
     lifespan=lifespan,
 )
+
+@app.exception_handler(HTTPException)
+async def custom_http_exception_handler(request: Request, exc: HTTPException):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "responseStatus": False,
+            "responseMessage": exc.detail,  # Mengambil string pesan dari exc.detail
+        }
+    )
 
 
 # ── CORS Middleware ───────────────────────────────────────────────

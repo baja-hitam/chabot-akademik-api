@@ -35,12 +35,16 @@ class AuthService:
         self.db.refresh(user)
         
         self._send_otp_email(user.email, otp)
-        return user
+        return {
+            "responseStatus": True,
+            "responseMessage": "User registered successfully. Please verify your email.",
+            "responseBody": user
+        }
 
     def login(self, user_in: UserLogin):
         user = self.db.query(User).filter(User.email == user_in.email).first()
         if not user or not verify_password(user_in.password, user.password_hash):
-            raise HTTPException(status_code=401, detail="Incorrect email or password")
+            raise HTTPException(status_code=401, detail="Invalid email or password")
             
         if not user.is_verified:
             # Resend OTP
@@ -49,10 +53,35 @@ class AuthService:
             self.db.commit()
             self._send_otp_email(user.email, user.otp_code)
             
-            return {"is_verified": False, "message": "Please verify your account. New OTP sent to email."}
+            return {            
+            "responseStatus": False,
+            "responseMessage": "Please verify your account. New OTP sent to email.",
+            "responseBody": { 
+                "user": {
+                    "id": user.id,
+                    "email": user.email,
+                    "username": user.username,
+                    "role": user.role
+                },
+                "is_verified": False
+            }}
             
         access_token = create_access_token(subject=user.id)
-        return {"access_token": access_token, "token_type": "bearer", "is_verified": True}
+        return {
+            "responseStatus": True,
+            "responseMessage": "Login successful",
+            "responseBody": {
+                "user": {
+                    "id": user.id,
+                    "email": user.email,
+                    "username": user.username,
+                    "role": user.role
+                },
+                "access_token": access_token,
+                "token_type": "bearer",
+                "is_verified": True
+            }
+        }
 
     def verify_otp(self, payload: OTPVerify):
         user = self.db.query(User).filter(User.email == payload.email).first()
@@ -74,8 +103,21 @@ class AuthService:
         self.db.commit()
         
         access_token = create_access_token(subject=user.id)
-        return {"access_token": access_token, "token_type": "bearer", "is_verified": True}
-        
+        return {
+            "responseStatus": True,
+            "responseMessage": "OTP verified successfully. You can now log in.",
+            "responseBody": {
+                "user": {
+                    "id": user.id,
+                    "email": user.email,
+                    "username": user.username,
+                    "role": user.role
+                },
+                "access_token": access_token,
+                "token_type": "bearer",
+                "is_verified": True
+            }
+        }
     def _send_otp_email(self, email: str, otp: str):
         # TODO: Implement actual SMTP sending here.
         # For now, we mock it by printing to console.

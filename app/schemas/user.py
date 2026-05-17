@@ -25,6 +25,11 @@ class UserResponse(UserBase):
     
     class Config:
         from_attributes = True
+        
+class UserResponseApi(BaseModel):
+    responseStatus: bool
+    responseMessage: str
+    responseBody: UserResponse
 
 class OTPVerify(BaseModel):
     email: EmailStr
