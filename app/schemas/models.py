@@ -80,6 +80,10 @@ class ChatResponse(BaseModel):
         default=0.0,
         description="Waktu pemrosesan dalam detik",
     )
+    session_id: str | None = Field(
+        default=None,
+        description="ID Sesi chat (opsional)",
+    )
 
 
 class ChatSessionResponse(BaseModel):

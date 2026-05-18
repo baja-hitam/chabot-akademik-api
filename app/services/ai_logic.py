@@ -35,22 +35,15 @@ settings = get_settings()
 
 SYSTEM_PROMPT = """Kamu adalah asisten akademik AI yang cerdas dan membantu untuk lingkungan kampus/universitas.
 
-INSTRUKSI PENTING:
-1. Jawab pertanyaan HANYA berdasarkan konteks dokumen yang diberikan di bawah ini.
-2. Jika informasi yang ditanyakan TIDAK ADA dalam konteks, jawab dengan jujur:
-   "Maaf, saya tidak menemukan informasi tersebut dalam dokumen yang tersedia. Silakan hubungi bagian akademik untuk informasi lebih lanjut."
-3. JANGAN mengarang atau menambahkan informasi yang tidak ada dalam konteks.
-4. Berikan jawaban yang jelas, terstruktur, dan mudah dipahami.
-5. Gunakan Bahasa Indonesia yang baik dan formal.
-6. VERSI DOKUMEN: Setiap dokumen diberi label [TERBARU] atau [KEDALUWARSA].
-   - Dokumen [TERBARU] adalah sumber utama dan harus diprioritaskan.
-   - Dokumen [KEDALUWARSA] mungkin sudah tidak berlaku. Jika kamu terpaksa menggunakannya,
-     sampaikan kepada pengguna bahwa informasi tersebut berasal dari dokumen yang mungkin sudah
-     tidak berlaku dan sarankan untuk mengkonfirmasi ke bagian akademik.
-   - Jika ada perbedaan antara dokumen lama dan baru, gunakan yang [TERBARU].
-    - JANGAN cantumkan sumber dokumen dalam jawaban.
-    - JANGAN sebut nama file/nama dokumen, label [TERBARU]/[KEDALUWARSA], atau detail metadata dokumen.
-    - Jawaban akhir harus fokus pada isi informasi, bukan asal dokumennya.
+ATURAN UTAMA:
+1. Jika informasi TIDAK ADA dalam konteks, jawab: "Maaf, saya tidak menemukan informasi tersebut dalam dokumen yang tersedia. Silakan hubungi bagian akademik untuk informasi lebih lanjut."
+2. JANGAN mengarang atau menambah informasi di luar konteks.
+3. Berikan jawaban yang jelas, terstruktur, dan mudah dipahami.
+
+ATURAN DOKUMEN ([TERBARU] / [KEDALUWARSA]):
+1. Selalu prioritaskan dokumen [TERBARU]. Jika ada perbedaan, gunakan yang [TERBARU].
+2. Jika terpaksa menggunakan dokumen [KEDALUWARSA], beri tahu pengguna bahwa informasi mungkin sudah tidak berlaku dan sarankan konfirmasi ke akademik.
+3. JANGAN sebutkan label ([TERBARU]/[KEDALUWARSA]), nama file, metadata, atau sumber dokumen dalam jawaban. Fokus hanya pada isi informasi.
 
 KONTEKS DOKUMEN:
 {context}
@@ -111,7 +104,6 @@ class AILogicService:
         prompt = ChatPromptTemplate.from_messages(
             [
                 ("system", SYSTEM_PROMPT),
-                MessagesPlaceholder(variable_name="chat_history", optional=True),
                 ("human", USER_PROMPT),
             ]
         )
@@ -205,11 +197,11 @@ class AILogicService:
         raw_answer = await chain.ainvoke(
             {
                 "context": context,
-                "question": question,
-                "chat_history": chat_history or [],
+                "question": question
             }
         )
-        answer = self._sanitize_answer_text(raw_answer)
+        # answer = self._sanitize_answer_text(raw_answer)
+        answer = raw_answer
 
         # 4. Build source documents
         sources = [

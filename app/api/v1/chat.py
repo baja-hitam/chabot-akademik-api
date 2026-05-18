@@ -96,8 +96,8 @@ async def chat(
         # 5. Save AI Response
         chat_repo.save_message(session_id=session_id, sender_role="assistant", content=response.answer)
 
-        # Include session_id in response (you might want to update ChatResponse schema to include it)
-        # response.session_id = str(session_id) # if added to schema
+        # Include session_id in response
+        response.session_id = str(session_id)
 
         return response
     except Exception as e:

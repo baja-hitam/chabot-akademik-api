@@ -8,8 +8,8 @@ from sqlalchemy.orm import relationship
 from app.domain.models.base import Base
 
 class SenderRole(enum.Enum):
-    USER = "user"
-    ASSISTANT = "assistant"
+    user = "user"
+    assistant = "assistant"
 
 class ChatSession(Base):
     __tablename__ = "chat_sessions"
