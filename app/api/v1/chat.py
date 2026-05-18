@@ -91,14 +91,14 @@ async def chat(
         chat_repo.save_message(session_id=session_id, sender_role="user", content=request.question)
 
         # 3. Retrieve Chat History
-        messages = chat_repo.get_messages_by_session(session_id, limit=10)
-        chat_history = format_history(messages)
+        # messages = chat_repo.get_messages_by_session(session_id, limit=10)
+        # chat_history = format_history(messages)
 
         # 4. Generate AI Response
         response = await ai_logic_service.get_answer(
             question=request.question,
             category=request.category.value if request.category else None,
-            chat_history=chat_history
+            # chat_history=chat_history
         )
 
         # 5. Save AI Response
