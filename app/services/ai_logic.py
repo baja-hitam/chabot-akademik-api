@@ -204,32 +204,31 @@ class AILogicService:
         answer = raw_answer
 
         # 4. Build source documents
-        sources = [
-            SourceDocument(
-                content=doc["content"][:300] + "..."
-                if len(doc["content"]) > 300
-                else doc["content"],
-                source=doc["source"],
-                category=doc["category"],
-                relevance_score=doc["relevance_score"],
-                document_year=doc.get("document_year"),
-                is_latest=doc.get("is_latest", True),
-                ocr_used=doc.get("ocr_used", False),
-            )
-            for doc in retrieved_docs
-        ]
+        # sources = [
+        #     SourceDocument(
+        #         content=doc["content"][:300] + "..."
+        #         if len(doc["content"]) > 300
+        #         else doc["content"],
+        #         source=doc["source"],
+        #         category=doc["category"],
+        #         relevance_score=doc["relevance_score"],
+        #         document_year=doc.get("document_year"),
+        #         is_latest=doc.get("is_latest", True),
+        #         ocr_used=doc.get("ocr_used", False),
+        #     )
+        #     for doc in retrieved_docs
+        # ]
 
         processing_time = round(time.time() - start_time, 3)
 
-        logger.info(
-            "Answered question in %.3fs with %d sources",
-            processing_time,
-            len(sources),
-        )
+        # logger.info(
+        #     "Answered question in %.3fs with %d sources",
+        #     processing_time,
+        #     len(sources),
+        # )
 
         return ChatResponse(
             answer=answer,
-            sources=sources,
             processing_time=processing_time,
         )
 

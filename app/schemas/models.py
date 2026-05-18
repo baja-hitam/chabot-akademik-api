@@ -72,10 +72,6 @@ class ChatResponse(BaseModel):
     """Response model for the chat endpoint."""
 
     answer: str = Field(description="Jawaban dari AI berdasarkan konteks dokumen")
-    sources: list[SourceDocument] = Field(
-        default_factory=list,
-        description="Daftar dokumen sumber yang digunakan",
-    )
     processing_time: float = Field(
         default=0.0,
         description="Waktu pemrosesan dalam detik",
@@ -84,6 +80,12 @@ class ChatResponse(BaseModel):
         default=None,
         description="ID Sesi chat (opsional)",
     )
+
+
+class ChatResponseApi(BaseModel):
+    responseStatus: bool
+    responseMessage: str
+    responseBody: ChatResponse
 
 
 class ChatSessionResponse(BaseModel):
@@ -95,6 +97,11 @@ class ChatSessionResponse(BaseModel):
     class Config:
         from_attributes = True
 
+class ChatSessionResponseApi(BaseModel):
+    responseStatus: bool
+    responseMessage: str
+    responseBody: list[ChatSessionResponse]
+
 class ChatMessageDetail(BaseModel):
     id: uuid.UUID
     sender_role: str
@@ -103,6 +110,11 @@ class ChatMessageDetail(BaseModel):
 
     class Config:
         from_attributes = True
+
+class ChatMessageDetailResponseApi(BaseModel):
+    responseStatus: bool
+    responseMessage: str
+    responseBody: list[ChatMessageDetail]
 
 # ── Ingest Schemas ────────────────────────────────────────────────
 

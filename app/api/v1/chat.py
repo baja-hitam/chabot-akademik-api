@@ -12,7 +12,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from app.schemas.models import ChatRequest, ChatResponse, ChatSessionResponse, ChatMessageDetail
+from app.schemas.models import ChatRequest, ChatResponse, ChatResponseApi, ChatSessionResponseApi, ChatMessageDetailResponseApi
 from app.services.ai_logic import ai_logic_service
 from app.services.vector_store import vector_store_service
 from app.infrastructure.database import get_db
@@ -24,16 +24,20 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Chat"])
 
-@router.get("/sessions", response_model=list[ChatSessionResponse])
+@router.get("/sessions", response_model=ChatSessionResponseApi)
 def get_chat_sessions(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Mendapatkan daftar sesi chat milik user saat ini."""
     repo = ChatRepository(db)
-    return repo.get_user_sessions(current_user.id)
+    return {
+        "responseStatus": True,
+        "responseMessage": "Data berhasil diambil",
+        "responseBody": repo.get_user_sessions(current_user.id)
+    }
 
-@router.get("/sessions/{session_id}/messages", response_model=list[ChatMessageDetail])
+@router.get("/sessions/{session_id}/messages", response_model=ChatMessageDetailResponseApi)
 def get_session_messages(
     session_id: uuid.UUID,
     current_user: User = Depends(get_current_user),
@@ -46,7 +50,11 @@ def get_session_messages(
         raise HTTPException(status_code=403, detail="Akses ditolak")
     
     # Passing limit 100 or none to get the full history for UI display
-    return repo.get_messages_by_session(session_id, limit=100)
+    return {
+        "responseStatus": True,
+        "responseMessage": "Data berhasil diambil",
+        "responseBody": repo.get_messages_by_session(session_id, limit=100)
+    }
 
 def format_history(messages):
     """Format DB messages into LangChain chat history format."""
@@ -57,14 +65,14 @@ def format_history(messages):
 
 @router.post(
     "/chat",
-    response_model=ChatResponse,
+    response_model=ChatResponseApi,
     summary="Chat with Academic AI",
 )
 async def chat(
     request: ChatRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
-) -> ChatResponse:
+) -> ChatResponseApi:
     """Process a question through the RAG pipeline and return a full response."""
     try:
         chat_repo = ChatRepository(db)
@@ -99,7 +107,11 @@ async def chat(
         # Include session_id in response
         response.session_id = str(session_id)
 
-        return response
+        return ChatResponseApi(
+            responseStatus=True,
+            responseMessage="Jawaban berhasil diambil",
+            responseBody=response
+        )
     except Exception as e:
         logger.error("Chat error: %s", e, exc_info=True)
         raise HTTPException(
