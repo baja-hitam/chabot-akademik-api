@@ -18,7 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.requests import Request
 
-from app.api.v1 import chat, health, ingest, auth, announcements
+from app.api.v1 import chat, health, ingest, auth, announcements, prodi, user
 from app.core.config import get_settings
 from app.infrastructure.database import engine
 from app.domain.models import base  # this ensures models are registered
@@ -35,9 +35,6 @@ logging.basicConfig(
     handlers=[logging.StreamHandler(sys.stdout)],
 )
 
-# Suppress noisy third-party HTTP client logs that expose internal
-# Ollama requests (e.g. "POST http://localhost:11434/api/chat") and
-# clutter the application log with implementation details.
 for _noisy_logger in ("httpx", "httpcore", "urllib3"):
     logging.getLogger(_noisy_logger).setLevel(logging.WARNING)
 
@@ -75,7 +72,7 @@ app = FastAPI(
     title="Academic AI Chatbot API",
     description=(
         "API backend untuk chatbot akademik cerdas berbasis RAG "
-        "(Retrieval-Augmented Generation). Menggunakan Llama 3.2 3B "
+        "(Retrieval-Augmented Generation). Menggunakan Llama 3.1 8b "
         "untuk menjawab pertanyaan berdasarkan dokumen akademik kampus."
     ),
     version="1.0.0",
@@ -113,7 +110,8 @@ app.include_router(ingest.router, prefix="/api/v1")
 app.include_router(chat.router, prefix="/api/v1")
 app.include_router(auth.router, prefix="/api/v1/auth")
 app.include_router(announcements.router, prefix="/api/v1/announcements")
-
+app.include_router(prodi.router, prefix="/api/v1/prodi")
+app.include_router(user.router, prefix="/api/v1/users")
 
 
 # ── Root Endpoint ─────────────────────────────────────────────────

@@ -1,5 +1,6 @@
 import uuid
-from sqlalchemy import Column, String, Boolean, DateTime
+from sqlalchemy import Column, String, Boolean, DateTime, Integer, ForeignKey
+from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
 from app.domain.models.base import Base
@@ -10,8 +11,11 @@ class User(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     username = Column(String(50), unique=True, index=True, nullable=False) # NIM/NIP
     email = Column(String(255), unique=True, index=True, nullable=False)
+    full_name = Column(String(255), nullable=True)
     password_hash = Column(String(255), nullable=False)
     role = Column(String(20), nullable=False, default="student")
+    kd_prodi = Column(Integer, ForeignKey('mprodi.kd_prodi', ondelete="SET NULL"), nullable=True)
+    prodi = relationship("Prodi")
     is_verified = Column(Boolean, default=False)
     otp_code = Column(String(6), nullable=True)
     otp_expires_at = Column(DateTime(timezone=True), nullable=True)

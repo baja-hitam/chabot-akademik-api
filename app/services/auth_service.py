@@ -26,7 +26,10 @@ class AuthService:
         user = User(
             email=user_in.email,
             username=user_in.username,
+            full_name=user_in.full_name,
             password_hash=get_password_hash(user_in.password),
+            role=user_in.role,
+            kd_prodi=user_in.kd_prodi,
             otp_code=otp,
             otp_expires_at=otp_expiry
         )
@@ -61,8 +64,15 @@ class AuthService:
                     "id": user.id,
                     "email": user.email,
                     "username": user.username,
-                    "role": user.role
+                    "full_name": user.full_name,
+                    "role": user.role,
+                    "kd_prodi": user.kd_prodi,
+                    "nama_prodi": user.prodi.nama_prodi if user.prodi else None,
+                    "is_verified": user.is_verified,
+                    "created_at": user.created_at
                 },
+                "access_token": '',
+                "token_type": '',
                 "is_verified": False
             }}
             
@@ -75,11 +85,36 @@ class AuthService:
                     "id": user.id,
                     "email": user.email,
                     "username": user.username,
-                    "role": user.role
+                    "full_name": user.full_name,
+                    "role": user.role,
+                    "kd_prodi": user.kd_prodi,
+                    "nama_prodi": user.prodi.nama_prodi if user.prodi else None,
+                    "is_verified": user.is_verified,
+                    "created_at": user.created_at
                 },
                 "access_token": access_token,
                 "token_type": "bearer",
                 "is_verified": True
+            }
+        }
+    
+    def get_by_id(self, id: int) -> User:
+        user = self.db.query(User).filter(User.id == id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        return {
+            "responseStatus": True,
+            "responseMessage": "User berhasil ditemukan",
+            "responseBody": {
+                "id": user.id,
+                "email": user.email,
+                "username": user.username,
+                "full_name": user.full_name,
+                "role": user.role,
+                "kd_prodi": user.kd_prodi,
+                "nama_prodi": user.prodi.nama_prodi if user.prodi else None,
+                "is_verified": user.is_verified,
+                "created_at": user.created_at
             }
         }
 
@@ -111,7 +146,12 @@ class AuthService:
                     "id": user.id,
                     "email": user.email,
                     "username": user.username,
-                    "role": user.role
+                    "full_name": user.full_name,
+                    "role": user.role,
+                    "kd_prodi": user.kd_prodi,
+                    "nama_prodi": user.prodi.nama_prodi if user.prodi else None,
+                    "is_verified": user.is_verified,
+                    "created_at": user.created_at
                 },
                 "access_token": access_token,
                 "token_type": "bearer",

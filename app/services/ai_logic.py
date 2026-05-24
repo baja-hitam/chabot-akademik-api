@@ -1,17 +1,3 @@
-"""
-AI Logic Service
-Implements the RAG (Retrieval-Augmented Generation) pipeline using LangChain.
-
-Supports two LLM providers:
-1. Local: Ollama (e.g., Llama 3.2 3B)
-2. Cloud: Groq Cloud API (e.g., Mixtral 8x7B)
-
-Configure via environment variables:
-- LLM_PROVIDER: "local" or "groq"
-- For local: OLLAMA_BASE_URL, OLLAMA_MODEL_NAME
-- For groq: GROQ_API_KEY, GROQ_MODEL_NAME
-"""
-
 import logging
 import re
 import time
@@ -65,8 +51,6 @@ class AILogicService:
 
     def _get_llm(self) -> Union[ChatOllama, ChatGroq]:
         """
-        Lazy-initialize the LLM client based on provider configuration.
-        
         Returns:
             ChatOllama if LLM_PROVIDER="local", ChatGroq if LLM_PROVIDER="groq"
         """
@@ -151,21 +135,7 @@ class AILogicService:
         category: str | None = None,
         chat_history: list = None,
     ) -> ChatResponse:
-        """
-        Process a question through the full RAG pipeline.
 
-        1. Retrieve relevant documents from vector store
-        2. Build context from retrieved documents
-        3. Generate answer using LLM with context
-        4. Return structured response with sources
-
-        Args:
-            question: User's academic question.
-            category: Optional category filter for document retrieval.
-
-        Returns:
-            ChatResponse with answer, sources, and processing time.
-        """
         start_time = time.time()
 
         # 1. Retrieve relevant document chunks
