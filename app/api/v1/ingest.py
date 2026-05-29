@@ -9,11 +9,14 @@ import logging
 import time
 from pathlib import Path
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile, Depends
+from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.schemas.models import CollectionInfo, DocumentCategory, IngestResponse
+from app.schemas.models import CollectionInfo, DocumentCategory, IngestResponseApi, IngestResponse, IngestedFilesResponseApi, DeleteResponseApi, DeleteResponse
 from app.services.vector_store import vector_store_service
+from app.infrastructure.database import get_db
+from app.domain.models.prodi import Prodi
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +30,7 @@ MAX_FILE_SIZE_MB = 50
 
 @router.post(
     "/ingest",
-    response_model=IngestResponse,
+    response_model=IngestResponseApi,
     summary="Upload & Ingest Document",
     description=(
         "Upload dokumen akademik (PDF, Markdown, TXT) untuk diproses "
@@ -40,7 +43,8 @@ async def ingest_document(
         default=DocumentCategory.LAINNYA,
         description="Kategori dokumen akademik",
     ),
-) -> IngestResponse:
+    kd_prodi: int | None = Form(None, description="Kode program studi"),
+) -> IngestResponseApi:
     """
     Upload and ingest an academic document into the vector store.
 
@@ -95,6 +99,7 @@ async def ingest_document(
             vector_store_service.ingest_document,
             upload_path,
             category.value,
+            kd_prodi,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -115,17 +120,55 @@ async def ingest_document(
         else ""
     )
 
-    return IngestResponse(
-        message=f"Dokumen '{file.filename}' berhasil diingest.{ocr_note}{superseded_note}",
-        filename=file.filename,
-        category=category.value,
-        chunks_created=result["chunks_created"],
-        processing_time=processing_time,
-        document_year=result["document_year"],
-        is_latest=True,
-        supersedes_count=result["supersedes_count"],
-        ocr_used=result["ocr_used"],
+    return IngestResponseApi(
+        responseStatus=True,
+        responseMessage="Dokumen berhasil di-ingest",
+        responseBody=IngestResponse(
+            message=f"Dokumen '{file.filename}' berhasil diingest.{ocr_note}{superseded_note}",
+            filename=file.filename,
+            category=category.value,
+            chunks_created=result["chunks_created"],
+            processing_time=processing_time,
+            document_year=result["document_year"],
+            is_latest=True,
+            supersedes_count=result["supersedes_count"],
+            ocr_used=result["ocr_used"],
+        )
     )
+
+
+@router.get(
+    "/ingest/files",
+    response_model=IngestedFilesResponseApi,
+    summary="Get Ingested Files",
+    description="Mendapatkan daftar file yang sudah ada di dalam vector database beserta metadatanya."
+)
+def get_ingested_files(db: Session = Depends(get_db)) -> IngestedFilesResponseApi:
+    """Get a list of all distinct files ingested into the vector store."""
+    try:
+        files = vector_store_service.get_ingested_files()
+        
+        # Get mapping of kd_prodi to nama_prodi
+        prodis = db.query(Prodi).all()
+        prodi_map = {p.kd_prodi: p.nama_prodi for p in prodis}
+        
+        # Map nama_prodi into files
+        for f in files:
+            kd_prodi = f.get("kd_prodi")
+            # 0 was used as default for global documents without kd_prodi
+            if kd_prodi and kd_prodi != 0:
+                f["nama_prodi"] = prodi_map.get(kd_prodi)
+            else:
+                f["nama_prodi"] = "Fakultas"
+                
+        return IngestedFilesResponseApi(
+            responseStatus=True,
+            responseMessage="Data berhasil diambil",
+            responseBody=files
+        )
+    except Exception as e:
+        logger.error("Failed to get ingested files: %s", e)
+        raise HTTPException(status_code=500, detail="Gagal mengambil data file")
 
 
 @router.delete(
@@ -133,7 +176,7 @@ async def ingest_document(
     summary="Delete Document",
     description="Hapus semua chunk dari dokumen tertentu di knowledge base.",
 )
-async def delete_document(filename: str) -> dict:
+async def delete_document(filename: str) -> DeleteResponseApi:
     """Delete all chunks of a specific document from the vector store."""
     from app.repositories.chroma_repo import chroma_repo
 
@@ -144,10 +187,13 @@ async def delete_document(filename: str) -> dict:
             detail=f"Dokumen '{filename}' tidak ditemukan.",
         )
 
-    return {
-        "message": f"Berhasil menghapus {deleted_count} chunk dari '{filename}'.",
-        "deleted_chunks": deleted_count,
-    }
+    return DeleteResponseApi(
+        responseStatus=True,
+        responseMessage=f"Berhasil menghapus {deleted_count} chunk dari '{filename}'.",
+        responseBody=DeleteResponse(
+            deleted_chunks=deleted_count,
+        )
+    )
 
 
 @router.get(

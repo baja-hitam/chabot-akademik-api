@@ -181,6 +181,30 @@ class ChromaRepository:
                     sources.add(src)
         return list(sources)
 
+    def get_ingested_files(self) -> list[dict[str, Any]]:
+        """
+        Return a list of unique ingested files and their metadata.
+        """
+        collection = self._get_collection()
+        if collection.count() == 0:
+            return []
+
+        all_data = collection.get(include=["metadatas"])
+        files_map = {}
+        for meta in (all_data.get("metadatas") or []):
+            if not meta:
+                continue
+            source = meta.get("source")
+            if source and source not in files_map:
+                files_map[source] = {
+                    "filename": source,
+                    "kd_prodi": meta.get("kd_prodi"),
+                    "category": meta.get("category"),
+                    "document_year": meta.get("document_year"),
+                    "is_latest": meta.get("is_latest")
+                }
+        return list(files_map.values())
+
     def update_metadata_by_source(
         self, source: str, metadata_update: dict[str, Any]
     ) -> int:

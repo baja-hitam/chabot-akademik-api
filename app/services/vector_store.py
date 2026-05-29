@@ -467,6 +467,7 @@ class VectorStoreService:
         self,
         file_path: Path,
         category: str = "lainnya",
+        kd_prodi: int | None = None,
     ) -> dict[str, Any]:
         """
         Full pipeline: load file → split → embed → store in ChromaDB.
@@ -477,6 +478,7 @@ class VectorStoreService:
         Args:
             file_path: Path to the document file.
             category:  Document category for metadata filtering.
+            kd_prodi:  Kode program studi, optional.
 
         Returns:
             Dict with keys:
@@ -521,22 +523,26 @@ class VectorStoreService:
             raw_excerpt = re.sub(r"\s+", " ", chunk).strip()
             excerpt = raw_excerpt[: settings.EXCERPT_CHARS]
 
-            metadatas.append(
-                {
-                    "source": file_path.name,
-                    "category": category,
-                    "chunk_index": i,
-                    "total_chunks": len(chunks),
-                    # Versioning fields
-                    "document_year": document_year if document_year is not None else 0,
-                    "document_base_name": document_base_name,
-                    "is_latest": True,
-                    # Extraction method flag
-                    "ocr_used": ocr_used,
-                    # Short excerpt for lightweight retrieval
-                    "excerpt": excerpt,
-                }
-            )
+            meta = {
+                "source": file_path.name,
+                "category": category,
+                "chunk_index": i,
+                "total_chunks": len(chunks),
+                # Versioning fields
+                "document_year": document_year if document_year is not None else 0,
+                "document_base_name": document_base_name,
+                "is_latest": True,
+                # Extraction method flag
+                "ocr_used": ocr_used,
+                # Short excerpt for lightweight retrieval
+                "excerpt": excerpt,
+            }
+            if kd_prodi is not None:
+                meta["kd_prodi"] = kd_prodi
+            else:
+                meta["kd_prodi"] = 0
+                
+            metadatas.append(meta)
 
         # 7. Store in ChromaDB
         chroma_repo.add_documents(
@@ -571,6 +577,7 @@ class VectorStoreService:
         query: str,
         top_k: int | None = None,
         category: str | None = None,
+        kd_prodi: int | None = None,
     ) -> list[dict[str, Any]]:
         """
         Search for document chunks most similar to the query.
@@ -582,6 +589,7 @@ class VectorStoreService:
             query:    The user's question.
             top_k:    Number of results to return.
             category: Optional category filter.
+            kd_prodi: Optional program studi filter.
 
         Returns:
             List of dicts with keys: content, source, category,
@@ -593,9 +601,24 @@ class VectorStoreService:
         embeddings_model = self._get_embeddings()
         query_embedding = embeddings_model.embed_query(query)
 
-        where_filter = None
+        where_conditions = []
         if category:
-            where_filter = {"category": category}
+            where_conditions.append({"category": category})
+            
+        if kd_prodi is not None:
+            where_conditions.append({
+                "$or": [
+                    {"kd_prodi": kd_prodi},
+                    {"kd_prodi": 0}
+                ]
+            })
+
+        if len(where_conditions) == 1:
+            where_filter = where_conditions[0]
+        elif len(where_conditions) > 1:
+            where_filter = {"$and": where_conditions}
+        else:
+            where_filter = None
 
         results = chroma_repo.query(
             query_embedding=query_embedding,
@@ -612,9 +635,6 @@ class VectorStoreService:
                 # Convert cosine distance to similarity score (range 0–1)
                 score = max(0.0, 1.0 - distance / 2.0)
 
-                # metadata: dict[str, Any] = (
-                #     results["metadatas"][0][i] if results.get("metadatas") else {}
-                # )
                 # Prefer the precomputed excerpt in metadata to minimize tokens.
                 metadata: dict[str, Any] = (
                     results["metadatas"][0][i] if results.get("metadatas") else {}
@@ -654,6 +674,10 @@ class VectorStoreService:
     def get_collection_info(self) -> dict[str, Any]:
         """Proxy to the repository's collection info."""
         return chroma_repo.get_collection_info()
+
+    def get_ingested_files(self) -> list[dict[str, Any]]:
+        """Proxy to the repository's get_ingested_files."""
+        return chroma_repo.get_ingested_files()
 
     def is_healthy(self) -> bool:
         """Check if the vector store is accessible."""

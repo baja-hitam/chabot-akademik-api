@@ -1,6 +1,8 @@
 import uuid
 from sqlalchemy.orm import Session
 from app.domain.models.chat import ChatSession, ChatMessage, SenderRole
+from app.domain.models.user import User
+from app.domain.models.prodi import Prodi
 
 class ChatRepository:
     def __init__(self, db: Session):
@@ -12,6 +14,20 @@ class ChatRepository:
         self.db.commit()
         self.db.refresh(session)
         return session
+
+    def get_all_sessions(self):
+        return self.db.query(
+                ChatSession.id,
+                ChatSession.user_id,
+                ChatSession.title,
+                ChatSession.created_at,
+                ChatSession.updated_at,
+                User.kd_prodi,
+                Prodi.nama_prodi,
+                User.full_name,
+                User.username,
+                User.email
+            ).join(User, ChatSession.user_id == User.id).join(Prodi, User.kd_prodi == Prodi.kd_prodi).order_by(ChatSession.created_at.desc()).all()
 
     def get_session_by_id(self, session_id: uuid.UUID) -> ChatSession:
         return self.db.query(ChatSession).filter(ChatSession.id == session_id).first()

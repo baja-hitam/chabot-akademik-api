@@ -97,10 +97,23 @@ class ChatSessionResponse(BaseModel):
     class Config:
         from_attributes = True
 
+class ChatSessionRelationUser(ChatSessionResponse):
+    user_id: uuid.UUID
+    kd_prodi: int
+    nama_prodi: str
+    full_name: str
+    username: str
+    email: str
+
 class ChatSessionResponseApi(BaseModel):
     responseStatus: bool
     responseMessage: str
     responseBody: list[ChatSessionResponse]
+
+class ChatSessionResponseAdminApi(BaseModel):
+    responseStatus: bool
+    responseMessage: str
+    responseBody: list[ChatSessionRelationUser]
 
 class ChatMessageDetail(BaseModel):
     id: uuid.UUID
@@ -144,6 +157,36 @@ class IngestResponse(BaseModel):
     ocr_used: bool = Field(
         default=False, description="Apakah OCR digunakan untuk ekstraksi teks"
     )
+
+class IngestResponseApi(BaseModel):
+    responseStatus: bool
+    responseMessage: str
+    responseBody: IngestResponse
+
+class IngestedFile(BaseModel):
+    filename: str
+    kd_prodi: int | None = None
+    nama_prodi: str | None = None
+    category: str | None = None
+    document_year: int | None = None
+    is_latest: bool | None = None
+
+class IngestedFilesResponseApi(BaseModel):
+    responseStatus: bool
+    responseMessage: str
+    responseBody: list[IngestedFile]
+
+class DeleteResponse(BaseModel):
+    """Response model for the document deletion endpoint."""
+    deleted_chunks: int = Field(
+        default=0,
+        description="Jumlah chunk yang berhasil dihapus",
+    )
+
+class DeleteResponseApi(BaseModel):
+    responseStatus: bool
+    responseMessage: str
+    responseBody: DeleteResponse
 
 
 # ── Health Schemas ────────────────────────────────────────────────

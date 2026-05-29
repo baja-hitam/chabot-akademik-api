@@ -134,6 +134,7 @@ class AILogicService:
         question: str,
         category: str | None = None,
         chat_history: list = None,
+        kd_prodi: int | None = None,
     ) -> ChatResponse:
 
         start_time = time.time()
@@ -142,6 +143,7 @@ class AILogicService:
         retrieved_docs = vector_store_service.search_similar(
             query=question,
             category=category,
+            kd_prodi=kd_prodi,
         )
 
         # 2. Build context string with versioning annotations
@@ -191,11 +193,10 @@ class AILogicService:
 
         processing_time = round(time.time() - start_time, 3)
 
-        # logger.info(
-        #     "Answered question in %.3fs with %d sources",
-        #     processing_time,
-        #     len(sources),
-        # )
+        logger.info(
+            "Answered question in %.3fs",
+            processing_time,
+        )
 
         return ChatResponse(
             answer=answer,
@@ -209,6 +210,7 @@ class AILogicService:
         question: str,
         category: str | None = None,
         chat_history: list = None,
+        kd_prodi: int | None = None,
     ) -> AsyncGenerator[str, None]:
         """
         Stream the RAG answer token by token.
@@ -219,6 +221,7 @@ class AILogicService:
         Args:
             question: User's academic question.
             category: Optional category filter.
+            kd_prodi: Optional program studi filter.
 
         Yields:
             Individual tokens/chunks of the answer.
@@ -227,6 +230,7 @@ class AILogicService:
         retrieved_docs = vector_store_service.search_similar(
             query=question,
             category=category,
+            kd_prodi=kd_prodi,
         )
 
         # 2. Build context with versioning annotations

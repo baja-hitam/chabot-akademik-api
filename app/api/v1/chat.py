@@ -12,7 +12,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from app.schemas.models import ChatRequest, ChatResponse, ChatResponseApi, ChatSessionResponseApi, ChatMessageDetailResponseApi
+from app.schemas.models import ChatRequest, ChatResponse, ChatResponseApi, ChatSessionResponseApi, ChatMessageDetailResponseApi, ChatSessionResponseAdminApi
 from app.services.ai_logic import ai_logic_service
 from app.services.vector_store import vector_store_service
 from app.infrastructure.database import get_db
@@ -54,6 +54,34 @@ def get_session_messages(
         "responseStatus": True,
         "responseMessage": "Data berhasil diambil",
         "responseBody": repo.get_messages_by_session(session_id, limit=100)
+    }
+
+@router.get("/sessions/history", response_model=ChatSessionResponseAdminApi)
+def get_chat_sessions_history(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Mendapatkan daftar sesi chat seluruh user."""
+    repo = ChatRepository(db)
+    return {
+        "responseStatus": True,
+        "responseMessage": "Data berhasil diambil",
+        "responseBody": repo.get_all_sessions()
+    }
+
+@router.get("/sessions/history/{session_id}/messages", response_model=ChatMessageDetailResponseApi)
+def get_session_messages_history(
+    session_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Mendapatkan riwayat pesan dari suatu sesi tertentu."""
+    repo = ChatRepository(db)
+    
+    return {
+        "responseStatus": True,
+        "responseMessage": "Data berhasil diambil",
+        "responseBody": repo.get_messages_by_session(session_id)
     }
 
 def format_history(messages):
@@ -98,6 +126,7 @@ async def chat(
         response = await ai_logic_service.get_answer(
             question=request.question,
             category=request.category.value if request.category else None,
+            kd_prodi=current_user.kd_prodi
             # chat_history=chat_history
         )
 
@@ -158,6 +187,7 @@ async def chat_stream(
             retrieved_docs = vector_store_service.search_similar(
                 query=request.question,
                 category=request.category.value if request.category else None,
+                kd_prodi=current_user.kd_prodi
             )
 
             sources_data = [
@@ -178,7 +208,8 @@ async def chat_stream(
             async for token in ai_logic_service.stream_answer(
                 question=request.question,
                 category=request.category.value if request.category else None,
-                chat_history=chat_history
+                chat_history=chat_history,
+                kd_prodi=current_user.kd_prodi
             ):
                 full_answer += token
                 yield f"event: token\ndata: {json.dumps({'token': token}, ensure_ascii=False)}\n\n"
