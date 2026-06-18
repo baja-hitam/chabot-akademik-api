@@ -46,7 +46,10 @@ class Settings(BaseSettings):
     CHUNK_OVERLAP: int = 200
 
     # ── RAG Configuration ─────────────────────────────────────────
-    TOP_K_RESULTS: int = os.getenv("TOP_K_RESULTS", 5)
+    USE_RERANKER: bool = os.getenv("USE_RERANKER", "true").lower() == "true"
+    RERANKER_MODEL_NAME: str = os.getenv("RERANKER_MODEL_NAME", "BAAI/bge-reranker-base")
+    TOP_K_RETRIEVE: int = int(os.getenv("TOP_K_RETRIEVE", 25))
+    TOP_K_RESULTS: int = int(os.getenv("TOP_K_RESULTS", 5))
     # Number of characters to keep as a short excerpt when returning
     # document snippets to the LLM. This helps reduce input token usage.
     EXCERPT_CHARS: int = 500

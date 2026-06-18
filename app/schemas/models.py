@@ -15,16 +15,12 @@ from pydantic import BaseModel, Field
 class DocumentCategory(str, Enum):
     """Categories for academic documents."""
 
-    KURIKULUM = "kurikulum"
-    PERATURAN = "peraturan"
-    PEDOMANPENULISANKKP = "pedoman_penulisan_kkp"
+    KALENDERAKADEMIK = "kalender_akademik"
+    PEDOMANPENULISANTAKKP = "pedoman_penulisan_ta_kkp"
     PANDUANTOPIKKKP = "panduan_topik_kkp"
     PANDUANTOPIKTA = "panduan_topik_ta"
-    JADWAL = "jadwal"
-    INFORMASI_UMUM = "informasi_umum"
-    BEASISWA = "beasiswa"
-    AKADEMIK = "akademik"
-    KEMAHASISWAAN = "kemahasiswaan"
+    BUKUKURIKULUM = "buku_kurikulum"
+    PANDUANKRS = "panduan_krs"
     LAINNYA = "lainnya"
 
 
@@ -75,6 +71,10 @@ class ChatResponse(BaseModel):
     processing_time: float = Field(
         default=0.0,
         description="Waktu pemrosesan dalam detik",
+    )
+    source_documents: list[SourceDocument] = Field(
+        default_factory=list,
+        description="Dokumen sumber yang digunakan untuk menghasilkan jawaban",
     )
     session_id: str | None = Field(
         default=None,

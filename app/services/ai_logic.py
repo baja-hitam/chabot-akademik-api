@@ -21,23 +21,24 @@ settings = get_settings()
 
 SYSTEM_PROMPT = """Kamu adalah asisten akademik AI yang cerdas dan membantu untuk lingkungan kampus/universitas.
 
-ATURAN UTAMA:
-1. Jika informasi TIDAK ADA dalam konteks, jawab: "Maaf, saya tidak menemukan informasi tersebut dalam dokumen yang tersedia. Silakan hubungi bagian akademik untuk informasi lebih lanjut."
-2. JANGAN mengarang atau menambah informasi di luar konteks.
-3. Berikan jawaban yang jelas, terstruktur, dan mudah dipahami.
-
 ATURAN DOKUMEN ([TERBARU] / [KEDALUWARSA]):
 1. Selalu prioritaskan dokumen [TERBARU]. Jika ada perbedaan, gunakan yang [TERBARU].
-2. Jika terpaksa menggunakan dokumen [KEDALUWARSA], beri tahu pengguna bahwa informasi mungkin sudah tidak berlaku dan sarankan konfirmasi ke akademik.
-3. JANGAN sebutkan label ([TERBARU]/[KEDALUWARSA]), nama file, metadata, atau sumber dokumen dalam jawaban. Fokus hanya pada isi informasi.
+2. Jika terpaksa menggunakan dokumen [KEDALUWARSA], beri tahu pengguna bahwa informasi mungkin sudah tidak berlaku.
+3. JANGAN sebutkan label ([TERBARU]/[KEDALUWARSA]), nama file, atau referensi sumber dalam jawaban.
 
-KONTEKS DOKUMEN:
-{context}
+ATURAN UTAMA (SANGAT PENTING):
+1. Kamu HANYA BOLEH menjawab berdasarkan informasi yang ada di dalam tag <konteks>.
+2. Jika tag <konteks> berisi "Tidak ada dokumen...", atau jika informasi tidak ada dalam konteks, kamu WAJIB menjawab persis seperti ini: "Maaf, saya tidak menemukan informasi tersebut dalam dokumen yang tersedia. Silakan hubungi bagian akademik untuk informasi lebih lanjut."
+3. JANGAN PERNAH mengarang, menebak, atau menggunakan pengetahuan umummu di luar tag <konteks>.
 """
 
-USER_PROMPT = """Pertanyaan: {question}
+USER_PROMPT = """<konteks>
+{context}
+</konteks>
 
-Jawab pertanyaan di atas berdasarkan konteks dokumen yang telah diberikan."""
+Pertanyaan: {question}
+
+Jawab pertanyaan di atas SECARA KETAT HANYA berdasarkan informasi di dalam tag <konteks>. Jika informasi tidak ada di sana, tolak untuk menjawab sesuai aturan."""
 
 
 class AILogicService:
@@ -88,6 +89,7 @@ class AILogicService:
         prompt = ChatPromptTemplate.from_messages(
             [
                 ("system", SYSTEM_PROMPT),
+                MessagesPlaceholder(variable_name="chat_history", optional=True),
                 ("human", USER_PROMPT),
             ]
         )
@@ -142,8 +144,8 @@ class AILogicService:
         # 1. Retrieve relevant document chunks
         retrieved_docs = vector_store_service.search_similar(
             query=question,
-            category=category,
             kd_prodi=kd_prodi,
+            category=category,
         )
 
         # 2. Build context string with versioning annotations
@@ -164,38 +166,39 @@ class AILogicService:
                 context_parts.append(f"{header}\n{doc['content']}")
             context = "\n\n---\n\n".join(context_parts)
 
-        # 3. Generate answer with LLM
         chain = self._build_chain()
         raw_answer = await chain.ainvoke(
             {
                 "context": context,
-                "question": question
+                "question": question,
+                "chat_history": chat_history or [],
             }
         )
         # answer = self._sanitize_answer_text(raw_answer)
         answer = raw_answer
 
         # 4. Build source documents
-        # sources = [
-        #     SourceDocument(
-        #         content=doc["content"][:300] + "..."
-        #         if len(doc["content"]) > 300
-        #         else doc["content"],
-        #         source=doc["source"],
-        #         category=doc["category"],
-        #         relevance_score=doc["relevance_score"],
-        #         document_year=doc.get("document_year"),
-        #         is_latest=doc.get("is_latest", True),
-        #         ocr_used=doc.get("ocr_used", False),
-        #     )
-        #     for doc in retrieved_docs
-        # ]
+        sources = [
+            SourceDocument(
+                content=doc["content"][:300] + "..."
+                if len(doc["content"]) > 300
+                else doc["content"],
+                source=doc["source"],
+                category=doc["category"],
+                relevance_score=doc["relevance_score"],
+                document_year=doc.get("document_year"),
+                is_latest=doc.get("is_latest", True),
+                ocr_used=doc.get("ocr_used", False),
+            )
+            for doc in retrieved_docs
+        ]
 
         processing_time = round(time.time() - start_time, 3)
 
         logger.info(
-            "Answered question in %.3fs",
+            "Answered question in %.3fs with %d sources",
             processing_time,
+            len(sources)
         )
 
         return ChatResponse(
@@ -229,8 +232,8 @@ class AILogicService:
         # 1. Retrieve relevant document chunks
         retrieved_docs = vector_store_service.search_similar(
             query=question,
-            category=category,
             kd_prodi=kd_prodi,
+            category=category,
         )
 
         # 2. Build context with versioning annotations
@@ -261,7 +264,8 @@ class AILogicService:
                 "chat_history": chat_history or [],
             }
         ):
-            yield self._sanitize_answer_text(chunk)
+            # Yield chunk directly to prevent space stripping in stream
+            yield chunk
 
     # ── Health Check ──────────────────────────────────────────────
 

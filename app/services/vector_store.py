@@ -18,9 +18,11 @@ from typing import Any
 
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+from sentence_transformers import CrossEncoder
 
 from app.core.config import get_settings
 from app.repositories.chroma_repo import chroma_repo
+from app.services.text_preprocessor import TextPreprocessor
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +48,9 @@ class VectorStoreService:
 
     def __init__(self) -> None:
         self._embeddings: HuggingFaceEmbeddings | None = None
+        self._reranker: CrossEncoder | None = None
         self._ocr_predictor: Any = None  # lazy-init doctr OCR predictor
+        self._preprocessor = TextPreprocessor()
         self._text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=settings.CHUNK_SIZE,
             chunk_overlap=settings.CHUNK_OVERLAP,
@@ -67,6 +71,16 @@ class VectorStoreService:
             )
             logger.info("Embedding model loaded successfully")
         return self._embeddings
+
+    def _get_reranker(self) -> CrossEncoder | None:
+        """Lazy-initialize the CrossEncoder reranker model."""
+        if not getattr(settings, "USE_RERANKER", False):
+            return None
+        if self._reranker is None:
+            logger.info("Loading Reranker model: %s", settings.RERANKER_MODEL_NAME)
+            self._reranker = CrossEncoder(settings.RERANKER_MODEL_NAME, max_length=512, device="cpu")
+            logger.info("Reranker model loaded successfully")
+        return self._reranker
 
     # ── Document Loading ──────────────────────────────────────────
 
@@ -492,6 +506,11 @@ class VectorStoreService:
         if not content.strip():
             raise ValueError(f"File '{file_path.name}' kosong atau tidak dapat dibaca.")
 
+        # 1.5 Preprocess text
+        content = self._preprocessor.preprocess(content, ocr_used=ocr_used)
+        if not content.strip():
+            raise ValueError(f"File '{file_path.name}' kosong setelah preprocessing.")
+
         # 2. Split into chunks
         chunks = self._split_text(content)
         if not chunks:
@@ -576,8 +595,8 @@ class VectorStoreService:
         self,
         query: str,
         top_k: int | None = None,
-        category: str | None = None,
         kd_prodi: int | None = None,
+        category: str | None = None,
     ) -> list[dict[str, Any]]:
         """
         Search for document chunks most similar to the query.
@@ -588,8 +607,8 @@ class VectorStoreService:
         Args:
             query:    The user's question.
             top_k:    Number of results to return.
-            category: Optional category filter.
             kd_prodi: Optional program studi filter.
+            category: Optional category filter.
 
         Returns:
             List of dicts with keys: content, source, category,
@@ -597,14 +616,13 @@ class VectorStoreService:
         """
         if top_k is None:
             top_k = settings.TOP_K_RESULTS
+            
+        retrieve_k = getattr(settings, "TOP_K_RETRIEVE", top_k) if getattr(settings, "USE_RERANKER", False) else top_k
 
         embeddings_model = self._get_embeddings()
         query_embedding = embeddings_model.embed_query(query)
 
         where_conditions = []
-        if category:
-            where_conditions.append({"category": category})
-            
         if kd_prodi is not None:
             where_conditions.append({
                 "$or": [
@@ -612,17 +630,19 @@ class VectorStoreService:
                     {"kd_prodi": 0}
                 ]
             })
+            
+        if category is not None:
+            where_conditions.append({"category": category})
 
+        where_filter = None
         if len(where_conditions) == 1:
             where_filter = where_conditions[0]
         elif len(where_conditions) > 1:
             where_filter = {"$and": where_conditions}
-        else:
-            where_filter = None
 
         results = chroma_repo.query(
             query_embedding=query_embedding,
-            n_results=top_k,
+            n_results=retrieve_k,
             where=where_filter,
         )
 
@@ -658,10 +678,28 @@ class VectorStoreService:
                     }
                 )
 
+        # ── Reranking Phase ──────────────────────────────────────────
+        if getattr(settings, "USE_RERANKER", False) and documents:
+            reranker = self._get_reranker()
+            if reranker is not None:
+                pairs = [[query, doc["content"]] for doc in documents]
+                scores = reranker.predict(pairs)
+                
+                for idx, score in enumerate(scores):
+                    # CrossEncoder outputs logits (can be negative or > 1).
+                    documents[idx]["relevance_score"] = float(score)
+                
+                # Sort documents descending by the reranker score
+                documents.sort(key=lambda x: x["relevance_score"], reverse=True)
+
+        # Slice to final top_k
+        final_docs = documents[:top_k]
+
         logger.debug(
-            "Search returned %d results for query: '%s'", len(documents), query[:80]
+            "Search returned %d results (from %d retrieved) for query: '%s'", 
+            len(final_docs), len(documents), query[:80]
         )
-        return documents
+        return final_docs
 
     # ── Helpers ────────────────────────────────────────────────────
 
