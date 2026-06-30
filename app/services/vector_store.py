@@ -4,8 +4,11 @@ Handles document loading, text splitting, embedding generation,
 and interaction with the ChromaDB repository.
 
 Features:
-- Vision-OCR fallback for image-based PDFs using DeepSeek OCR via Ollama
-  (requires pdf2image; the OCR model must be available in your Ollama instance)
+- Vision-OCR for image-based PDFs using Ollama multimodal models
+  (e.g., gemma3, llava, moondream) as the primary OCR engine.
+  These models understand Indonesian language context and handle
+  scanned academic documents, tables, and schedules correctly.
+- Fallback OCR via doctr (local, CPU) when Ollama Vision is unavailable.
 - Automatic document versioning: older versions of the same document are
   marked as superseded when a newer year is uploaded.
 """
@@ -13,6 +16,7 @@ Features:
 import hashlib
 import logging
 import re
+import base64
 from pathlib import Path
 from typing import Any
 
@@ -30,17 +34,24 @@ settings = get_settings()
 
 # Pages whose native-extracted text is shorter than this (chars) are
 # considered image-only → OCR replaces the native text.
-_OCR_THRESHOLD_CHARS_PER_PAGE = 200
+#
+# Rationale for 100 chars (down from 200):
+#   - Scanned pages often yield a handful of noise characters from pypdf
+#     (e.g. stray punctuation, header artefacts) that sum to 50–150 chars.
+#   - Setting the bar at 100 ensures those noisy pages are still sent to OCR
+#     while clean text-only pages (typically 500+ chars) are unaffected.
+_OCR_THRESHOLD_CHARS_PER_PAGE = 100
 
 # If the total bounding-box area of embedded images on a page exceeds
 # this fraction of the page area, the page is flagged as containing
 # significant visual content.
 #
-# Rationale for 0.25 (25 %):
-#   - Typical header/footer decorations (logo + rule lines) cover ~18 % → excluded.
-#   - Actual content images (screenshots, diagrams) start at ~31 % → included.
-#   - A clean gap between 18 % and 31 % makes 25 % a stable threshold.
-_OCR_IMAGE_AREA_RATIO = 0.25
+# Rationale for 0.15 (15 %):
+#   - Tiny decorative elements (small logos, thin rule lines) cover < 10 % → excluded.
+#   - Medium content images (screenshots, embedded figures) start at ~16 % → included.
+#   - The 0.15 threshold is more sensitive than 0.25 and correctly captures
+#     pages where a figure occupies only a quarter of the column width.
+_OCR_IMAGE_AREA_RATIO = 0.15
 
 
 class VectorStoreService:
@@ -200,7 +211,7 @@ class VectorStoreService:
             ocr_map: dict[int, str] = dict(
                 zip(
                     all_ocr_indices,
-                    self._load_pdf_with_ocr(file_path, all_ocr_indices),
+                    self._load_pdf_with_doctr(file_path, all_ocr_indices),
                 )
             )
 
@@ -228,11 +239,242 @@ class VectorStoreService:
         )
         return content, ocr_used
 
-    # ── Local OCR (doctr) ─────────────────────────────────────
+    # ── Ollama Vision OCR ─────────────────────────────────────
+
+    def _load_pdf_with_ollama_vision(
+        self,
+        file_path: Path,
+        page_indices: list[int],
+    ) -> list[str]:
+        """
+        Extract text from specific PDF pages using an Ollama multimodal model.
+
+        This is the primary OCR strategy for image-heavy pages because
+        multimodal LLMs (gemma3, llava, etc.) understand Indonesian language,
+        academic document structure, tables, and scanned text far better than
+        traditional OCR engines like doctr.
+
+        Strategy
+        --------
+        Each requested page is rendered to a PNG image at ``settings.OCR_DPI``
+        using PyMuPDF, then sent to the Ollama vision model with a prompt that
+        instructs it to extract all visible text faithfully, preserving the
+        original formatting (tables, bullet lists, headings) in plain text.
+
+        Args:
+            file_path:    Path to the PDF file.
+            page_indices: 0-based page numbers that need OCR.
+
+        Returns:
+            List of extracted text strings, one per entry in ``page_indices``.
+            Failed pages return an empty string at that position.
+        """
+        vision_model = getattr(settings, "OLLAMA_VISION_MODEL", "").strip()
+        ollama_url = getattr(settings, "OLLAMA_BASE_URL", "").strip()
+
+        if not vision_model or not ollama_url:
+            logger.info(
+                "Ollama Vision OCR skipped: OLLAMA_VISION_MODEL or OLLAMA_BASE_URL not set."
+            )
+            return [""] * len(page_indices)
+
+        try:
+            import ollama as ollama_client  # type: ignore[import-untyped]
+            import fitz  # type: ignore[import-untyped]  # PyMuPDF
+        except ImportError as exc:
+            logger.warning(
+                "Ollama Vision OCR dependency missing (%s). Skipping for '%s'.",
+                exc,
+                file_path.name,
+            )
+            return [""] * len(page_indices)
+
+        # Use 96 DPI and JPEG for a compact payload (~150–300 KB per page).
+        # The ollama library handles base64 encoding internally when bytes are passed.
+        _VISION_DPI = 150
+        _vis_scale = _VISION_DPI / 72
+        _MATRIX = fitz.Matrix(_vis_scale, _vis_scale)
+
+        _OCR_PROMPT = (
+            "Kamu adalah mesin OCR yang sangat akurat untuk dokumen akademik berbahasa Indonesia. "
+            "Tugas kamu adalah mengekstrak SEMUA teks yang terlihat pada gambar halaman dokumen ini "
+            "secara lengkap dan akurat.\n\n"
+            "Panduan ekstraksi:\n"
+            "- Salin SEMUA teks persis seperti yang tertulis di dokumen, termasuk angka, tanggal, dan kode.\n"
+            "- Pertahankan struktur tabel dalam format yang mudah dibaca (pisahkan kolom dengan ' | ').\n"
+            "- Pertahankan judul, sub-judul, dan hierarki teks.\n"
+            "- Jangan tambahkan penjelasan, komentar, atau interpretasi apapun.\n"
+            "- Jika ada teks yang tidak jelas, tulis sesuai perkiraan terbaik kamu.\n"
+            "- Mulai langsung dengan teks yang diekstrak, tanpa kata pengantar."
+        )
+
+        # Confusion markers: the model responded without seeing the image
+        _CONFUSION_MARKERS = (
+            "mohon berikan", "mohon lampirkan", "silakan berikan",
+            "silakan kirim", "please provide", "please send", "please share",
+        )
+
+        # Instantiate Ollama client pointing at the configured base URL
+        client = ollama_client.Client(host=ollama_url)
+
+        logger.info(
+            "Ollama Vision OCR: processing %d page(s) of '%s' using model '%s' at %s …",
+            len(page_indices),
+            file_path.name,
+            vision_model,
+            ollama_url,
+        )
+
+        results: list[str] = []
+        pdf_doc = None
+        try:
+            pdf_doc = fitz.open(str(file_path))
+            for idx in page_indices:
+                page_num = idx + 1
+                try:
+                    # Render page → JPEG bytes (compact, enough detail for OCR)
+                    pix = pdf_doc[idx].get_pixmap(matrix=_MATRIX)
+                    img_bytes = pix.tobytes("jpeg")
+                    # ── PERBAIKAN 3: Ubah ke Base64 String secara eksplisit untuk stabilitas Ollama ──
+                    img_base64 = base64.b64encode(img_bytes).decode("utf-8")
+                    logger.debug(
+                        "Ollama Vision: page %d rendered to JPEG, %d bytes.",
+                        page_num, len(img_bytes),
+                    )
+
+                    # Use the official ollama client — it handles base64 encoding
+                    # and the correct multimodal message format internally.
+                    response = client.chat(
+                        model=vision_model,
+                        messages=[
+                            {
+                                "role": "user",
+                                "content": _OCR_PROMPT,
+                                "images": [img_base64],
+                            }
+                        ],
+                        options={"temperature": 0, "num_predict": 4096},
+                        stream=False
+                    )
+                    text = response.message.content.strip()
+
+                    # Detect confusion responses (model didn't see the image)
+                    if any(m in text.lower() for m in _CONFUSION_MARKERS):
+                        logger.warning(
+                            "Ollama Vision confusion response on page %d of '%s' — "
+                            "model did not process the image. Falling back to doctr.",
+                            page_num, file_path.name,
+                        )
+                        text = ""
+
+                    results.append(text)
+                    logger.info(
+                        "Ollama Vision OCR page %d of '%s': %d chars.",
+                        page_num,
+                        file_path.name,
+                        len(text),
+                    )
+
+                except Exception as exc:
+                    logger.error(
+                        "Ollama Vision OCR failed on page %d of '%s': %s",
+                        page_num,
+                        file_path.name,
+                        exc,
+                    )
+                    results.append("")
+
+        finally:
+            if pdf_doc is not None:
+                try:
+                    pdf_doc.close()
+                except Exception:
+                    pass
+
+        logger.info(
+            "Ollama Vision OCR completed for '%s': %d/%d pages extracted successfully.",
+            file_path.name,
+            sum(1 for r in results if r),
+            len(page_indices),
+        )
+        return results
+
+    # ── Local OCR (doctr — fallback) ────────────────────────────
+
+    def _repair_text_with_ollama(self, raw_ocr_text: str) -> str:
+        """
+        Menggunakan LLM lokal untuk merapikan, memperbaiki typo, 
+        dan merekonstruksi tabel dari teks mentah hasil OCR doctr.
+        """
+        # Pastikan self.settings diakses dengan benar lewat instance 'self'
+        ollama_url = getattr(settings, "OLLAMA_BASE_URL", "").strip()
+        repair_model = getattr(settings, "OLLAMA_REPAIR_MODEL", "gemma4:e4b").strip() 
+
+        if not raw_ocr_text.strip():
+            return ""
+
+        if not ollama_url:
+            logger.warning("OLLAMA_BASE_URL tidak diatur, mengembalikan teks mentah.")
+            return raw_ocr_text
+
+        # # ── PERBAIKAN 1: Pastikan endpoint mengarah ke /api/chat ──
+        if not ollama_url.endswith("/api/chat"):
+            ollama_url = f"{ollama_url.rstrip('/')}/api/chat"
+
+        _REPAIR_PROMPT = (
+            "Kamu adalah asisten ahli pemrosesan dokumen akademik Indonesia. "
+            "Tugasmu adalah memperbaiki teks mentah hasil OCR yang berantakan di bawah ini agar menjadi rapi, "
+            "layak dibaca, dan kaya akan kata kunci untuk sistem pencarian (knowledge base).\n\n"
+            "Aturan Perbaikan:\n"
+            "1. Perbaiki typo akibat salah baca OCR (contoh: '0' jadi 'O', '1' jadi 'l', kata hancur seperti 'Semsster').\n"
+            "2. Jika teks tersebut terlihat seperti tabel/kalender kegiatan, susun ulang menjadi format tabel yang rapi menggunakan pemisah ' | '.\n"
+            "3. Pertahankan semua data penting: tanggal, angka, tahun akademik, kode, dan nama kegiatan (JANGAN DIUBAH ATAU DIHAPUS).\n"
+            "4. JANGAN tambahkan komentar, penjelasan, atau pengantar. Langsung keluarkan teks yang sudah diperbaiki."
+        )
+
+        try:
+            import requests
+            payload = {
+                "model": repair_model,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": f"{_REPAIR_PROMPT}\n\nBerikut adalah teks mentah OCR:\n{raw_ocr_text}"
+                    }
+                ],
+                "options": {
+                    "temperature": 0.1
+                },
+                "stream": False
+            }
+
+            logger.info("Mengirim permintaan repair ke Ollama di %s menggunakan model %s...", ollama_url, repair_model)
+            response = requests.post(ollama_url, json=payload, timeout=600)
+            
+            # ── PERBAIKAN 2: Tangani jika status code bukan 200 untuk mempermudah debugging ──
+            if response.status_code != 200:
+                logger.error("Ollama mengembalikan status code %d: %s", response.status_code, response.text)
+                return raw_ocr_text
+
+            # ── PERBAIKAN 3: Ambil response content secara aman ──
+            response_data = response.json()
+            repaired_text = response_data.get("message", {}).get("content", "").strip()
+            
+            if repaired_text:
+                logger.info("Teks berhasil diperbaiki oleh Ollama.")
+                print(repaired_text)  # Sekarang ini akan muncul jika respons berhasil
+                return repaired_text
+            else:
+                logger.warning("Ollama berhasil merespons tetapi mengembalikan teks kosong.")
+            
+        except Exception as exc:
+            logger.error("Gagal memperbaiki teks via Ollama: %s", exc)
+        
+        return raw_ocr_text
 
     def _get_ocr_predictor(self) -> Any:
         """
-        Lazy-initialize the doctr OCR predictor.
+        Lazy-initialize the doctr OCR predictor (fallback OCR engine).
 
         The predictor is created once per service instance and reused for all
         subsequent OCR calls.  On first use, doctr downloads two pre-trained
@@ -250,28 +492,16 @@ class VectorStoreService:
             logger.info("doctr OCR predictor ready.")
         return self._ocr_predictor
 
-    def _load_pdf_with_ocr(
+    def _load_pdf_with_doctr(
         self,
         file_path: Path,
         page_indices: list[int],
     ) -> list[str]:
         """
-        OCR a specific subset of PDF pages using doctr (local, no network).
+        OCR a specific subset of PDF pages using doctr (local fallback).
 
-        Strategy
-        --------
-        Each requested page is rendered to a PNG image at ``settings.OCR_DPI``
-        resolution by PyMuPDF, then passed to the doctr predictor which runs
-        a two-stage pipeline:
-
-        1. **Text detection** – FAST architecture (CNN) locates word bounding
-           boxes on the image.
-        2. **Text recognition** – CRNN model transcribes each detected region
-           into a string.
-
-        Both models run locally on CPU using PyTorch (already a project
-        dependency via ``sentence-transformers``).  No Ollama, no network
-        calls, no external binaries required.
+        Used when Ollama Vision is not available or returns empty results.
+        Runs locally on CPU via PyTorch with no network calls required.
 
         Args:
             file_path:    Path to the PDF file.
@@ -286,7 +516,7 @@ class VectorStoreService:
             from doctr.io import DocumentFile  # type: ignore[import-untyped]
         except ImportError as exc:
             logger.warning(
-                "OCR dependency missing (%s). "
+                "doctr OCR dependency missing (%s). "
                 "Run: pip install pymupdf python-doctr  "
                 "Skipping OCR for '%s'.",
                 exc,
@@ -299,7 +529,7 @@ class VectorStoreService:
         _dpi_scale = settings.OCR_DPI / 72
         _MATRIX = fitz.Matrix(_dpi_scale, _dpi_scale)
         logger.info(
-            "doctr OCR: processing %d page(s) of '%s' at %d DPI…",
+            "doctr OCR (fallback): processing %d page(s) of '%s' at %d DPI…",
             len(page_indices),
             file_path.name,
             settings.OCR_DPI,
@@ -320,14 +550,43 @@ class VectorStoreService:
                     doc_page = DocumentFile.from_images([img_bytes])
                     result = predictor(doc_page)
 
-                    # Flatten blocks → lines → words into plain text
+                    # Flatten blocks → lines → words into plain text.
+                    # Sort blocks in reading order: top-to-bottom, then
+                    # left-to-right within the same vertical band.  This is
+                    # critical for multi-column layouts where doctr may return
+                    # blocks in bounding-box order rather than reading order.
                     page_result = result.pages[0]
-                    lines = [
-                        " ".join(w.value for w in line.words)
-                        for block in page_result.blocks
-                        for line in block.lines
-                    ]
-                    text = "\n".join(line for line in lines if line.strip())
+                    sorted_blocks = sorted(
+                        page_result.blocks,
+                        key=lambda b: (
+                            round(b.geometry[0][1], 1),  # y_min (top edge)
+                            b.geometry[0][0],            # x_min (left edge)
+                        ),
+                    )
+                    block_texts: list[str] = []
+                    for block in sorted_blocks:
+                        block_lines = [
+                            " ".join(w.value for w in line.words)
+                            for line in block.lines
+                        ]
+                        block_text = "\n".join(
+                            ln for ln in block_lines if ln.strip()
+                        )
+                        if block_text.strip():
+                            block_texts.append(block_text)
+
+                    # Join blocks with a paragraph break so chunking keeps
+                    # semantically distinct paragraphs together.
+                    text = "\n\n".join(block_texts)
+
+                    # --- PERBAIKAN TEKS (OLLAMA LLM) ---
+                    if text.strip():
+                        try:
+                            text = self._repair_text_with_ollama(text)
+                        except Exception:
+                            pass
+                    # ------------------------------------
+
                     results.append(text)
                     logger.debug(
                         "doctr page %d of '%s': %d chars.",

@@ -86,8 +86,10 @@ class TextPreprocessor:
         text = re.sub(r"^[#*?_=\-\.]{5,}$", "", text, flags=re.MULTILINE)
         # Fix zero-in-word → 'O' (e.g., Pr0gram → Program)
         text = re.sub(r"(?<=[a-zA-Z])0(?=[a-zA-Z])", "O", text)
-        # Remove isolated single characters that are likely OCR noise
-        text = re.sub(r"(?<=\s)[^\w\s](?=\s)", "", text)
+        # Remove isolated single characters that are likely OCR noise.
+        # Only target visually noisy symbols: ~, ^, `, |, \, @
+        # Preserve meaningful academic symbols: /, (, ), %, +, =, &, -, :
+        text = re.sub(r"(?<=\s)[~^`|\\@](?=\s)", "", text)
         # Collapse multiple punctuation
         text = re.sub(r"([.!?]){3,}", r"\1", text)
         return text

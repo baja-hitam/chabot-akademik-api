@@ -21,6 +21,10 @@ class Settings(BaseSettings):
     # ── Ollama Configuration (when LLM_PROVIDER="local") ─────────────
     OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL")
     OLLAMA_MODEL_NAME: str = os.getenv("OLLAMA_MODEL_NAME")
+    # Vision model used for image-based PDF OCR (must support image input).
+    # Recommended options: gemma4:e4b, llava, moondream, llava-phi3
+    # Set to empty string "" to disable Ollama vision OCR and fall back to doctr.
+    OLLAMA_VISION_MODEL: str = os.getenv("OLLAMA_VISION_MODEL", "gemma4:e4b")
     
     # ── Groq Configuration (when LLM_PROVIDER="groq") ──────────────
     GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
@@ -30,9 +34,11 @@ class Settings(BaseSettings):
     LLM_MODEL_NAME: str = os.getenv("LLM_MODEL_NAME", "")
     
     # Render resolution for PDF pages sent to the doctr OCR pipeline.
-    # 150 DPI is the sweet spot: good accuracy, small PNG payload (~1–2 MB).
-    # Increase to 200–250 only if text on scanned pages is very small.
-    OCR_DPI: int = 150
+    # 200 DPI is the recommended default: sharp enough for doctr to recognise
+    # characters reliably while keeping PNG payloads reasonable (~3–5 MB).
+    # Increase to 250–300 via the OCR_DPI env var only if text is very small
+    # (e.g. dense tables with 6–8 pt fonts on scanned pages).
+    OCR_DPI: int = int(os.getenv("OCR_DPI", 200))
 
     # ── Embedding Model ───────────────────────────────────────────
     EMBEDDING_MODEL_NAME: str = "BAAI/bge-m3"
