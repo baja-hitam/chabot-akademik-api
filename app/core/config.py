@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     # Recommended options: gemma4:e4b, llava, moondream, llava-phi3
     # Set to empty string "" to disable Ollama vision OCR and fall back to doctr.
     OLLAMA_VISION_MODEL: str = os.getenv("OLLAMA_VISION_MODEL", "gemma4:e4b")
+    OLLAMA_REPAIR_MODEL: str = os.getenv("OLLAMA_REPAIR_MODEL", "gemma4:e4b")
     
     # ── Groq Configuration (when LLM_PROVIDER="groq") ──────────────
     GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")

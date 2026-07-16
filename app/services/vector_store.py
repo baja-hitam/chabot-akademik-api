@@ -427,9 +427,10 @@ class VectorStoreService:
             "layak dibaca, dan kaya akan kata kunci untuk sistem pencarian (knowledge base).\n\n"
             "Aturan Perbaikan:\n"
             "1. Perbaiki typo akibat salah baca OCR (contoh: '0' jadi 'O', '1' jadi 'l', kata hancur seperti 'Semsster').\n"
-            "2. Jika teks tersebut terlihat seperti tabel/kalender kegiatan, susun ulang menjadi format tabel yang rapi menggunakan pemisah ' | '.\n"
-            "3. Pertahankan semua data penting: tanggal, angka, tahun akademik, kode, dan nama kegiatan (JANGAN DIUBAH ATAU DIHAPUS).\n"
-            "4. JANGAN tambahkan komentar, penjelasan, atau pengantar. Langsung keluarkan teks yang sudah diperbaiki."
+            "2. JANGAN PERNAH meringkas, menghapus, atau menghilangkan teks/informasi asli. Semua data, nama, angka, dan tanggal harus tetap ada secara lengkap.\n"
+            "3. Jika teks tersebut mengandung tabel, jadwal, daftar, atau kalender kegiatan, ubah dan susun ulang seluruh datanya menjadi kalimat biasa yang utuh.\n"
+            "4. Pertahankan semua data penting: tanggal, angka, tahun akademik, kode, dan nama kegiatan (JANGAN DIUBAH ATAU DIHAPUS).\n"
+            "5. JANGAN tambahkan komentar, penjelasan, atau pengantar. Langsung keluarkan teks yang sudah diperbaiki."
         )
 
         try:
@@ -442,9 +443,6 @@ class VectorStoreService:
                         "content": f"{_REPAIR_PROMPT}\n\nBerikut adalah teks mentah OCR:\n{raw_ocr_text}"
                     }
                 ],
-                "options": {
-                    "temperature": 0.1
-                },
                 "stream": False
             }
 
@@ -578,6 +576,9 @@ class VectorStoreService:
                     # Join blocks with a paragraph break so chunking keeps
                     # semantically distinct paragraphs together.
                     text = "\n\n".join(block_texts)
+
+                    # Tampilkan teks mentah di terminal sebelum diperbaiki
+                    logger.info("=== RAW OCR TEXT SEBELUM PERBAIKAN (Halaman %d) ===\n%s\n===============================================", page_num, text)
 
                     # --- PERBAIKAN TEKS (OLLAMA LLM) ---
                     if text.strip():
